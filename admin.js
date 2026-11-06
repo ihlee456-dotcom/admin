@@ -81,8 +81,8 @@
   function count(table, q) {
     return api('/rest/v1/' + table + '?select=id' + (q ? '&' + q : '') + '&limit=1', { raw: true, headers: { Prefer: 'count=exact' } }).then(function (x) { return countOf(x.res); });
   }
-  function signedUrl(path) {
-    return api('/storage/v1/object/sign/uploads/' + path.split('/').map(encodeURIComponent).join('/'), { method: 'POST', body: { expiresIn: 3600 } })
+  function signedUrl(path, bucket) {
+    return api('/storage/v1/object/sign/' + (bucket || 'uploads') + '/' + path.split('/').map(encodeURIComponent).join('/'), { method: 'POST', body: { expiresIn: 3600 } })
       .then(function (j) { var u = j && (j.signedURL || j.signedUrl); return u ? (/^https?:/.test(u) ? u : CFG.url + '/storage/v1' + u) : ''; });
   }
   function safeUrl(u) { u = String(u || '').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
@@ -90,10 +90,10 @@
   /* ---------- 표 설정 ---------- */
   var STATUS = { pending: '대기', approved: '승인', rejected: '반려', active: '정상', blocked: '차단',
                  requested: '대기', confirmed: '확정', visited: '방문', noshow: '노쇼', declined: '거절', cancelled: '취소', accepted: '수락',
-                 sent: '보냄', failed: '실패', skipped: '건너뜀', sending: '보내는 중' };
+                 sent: '보냄', failed: '실패', skipped: '건너뜀', sending: '보내는 중', visible: '공개', hidden: '숨김', deleted: '가수가 내림' };
   var PILL = { pending: 'pending', requested: 'pending', approved: 'approved', active: 'approved', confirmed: 'approved', accepted: 'approved', visited: 'approved',
                rejected: 'rejected', blocked: 'rejected', declined: 'rejected', noshow: 'rejected', cancelled: 'off',
-               sent: 'approved', failed: 'rejected', skipped: 'off', sending: 'pending' };
+               sent: 'approved', failed: 'rejected', skipped: 'off', sending: 'pending', visible: 'approved', hidden: 'off', deleted: 'rejected' };
   var NOTE = { contact_new: '새 컨택 요청 (받는 사람에게)', contact_result: '컨택 수락 · 거절 (보낸 사람에게)', booking_admin: '새 예약 (운영자에게)',
                booking_guest: '예약 접수 (손님에게)', booking_result: '예약 확정 · 불가 · 취소 (손님에게)' };
   var KIND = { watch: '공연 관람', rent: '대관 견적' };
@@ -138,6 +138,13 @@
       fields: [['방향', 'direction', function (v) { return DIR[v] || v; }], ['가수', 'artist_name'], ['라이브바', 'venue_name'], ['희망 날짜', 'wish_date', day], ['시간', 'wish_time'],
                ['페이 · 조건', 'pay'], ['메시지', 'message'], ['답장', 'reply'], ['답한 시각', 'replied_at', function (v) { return fmt(v, true); }]],
       details: {}, extra: [['', '모든 방향'], ['artist_to_venue', '가수 → 라이브바'], ['venue_to_artist', '라이브바 → 가수']]
+    },
+    clips: {
+      title: '피드 영상', one: '영상', nameOf: function (r) { return (r.artist_name || '가수') + ' 클립'; }, search: ['artist_name', 'caption'],
+      statuses: ['visible', 'hidden', 'deleted'], setStatuses: ['visible', 'hidden'], cols: '1.1fr 0.5fr 2fr 90px 86px',
+      head: ['가수', '길이', '한마디', '올린 날', '상태'],
+      cells: function (r) { return [r.artist_name, Math.round(+r.duration || 0) + '초', r.caption, fmt(r.created_at)]; },
+      fields: [['가수', 'artist_name'], ['길이', 'duration', function (v) { return (Math.round(+v * 10) / 10) + '초'; }], ['한마디', 'caption']], details: {}
     },
     notify_log: {
       title: '알림 기록', one: '알림 기록', nameOf: function (r) { return NOTE[r.event] || r.event; }, search: ['to_phone', 'event', 'detail'], readonly: true,
@@ -275,7 +282,7 @@
   function listView(t) {
     var cfg = T[t], st = LS[t] || (LS[t] = { status: '', q: '', page: 0, x: t === 'bookings' ? 'upcoming' : '' });
     view.innerHTML = '<div class="vh"><div><h1>' + cfg.title + '</h1><p id="ls-sum">불러오는 중…</p></div><span class="grow"></span><button type="button" class="btn ghost sm" id="ls-csv">엑셀(CSV) 내려받기</button></div>' +
-      '<div class="tools"><input type="search" class="search" id="ls-q" placeholder="' + (t === 'contacts' ? '가수 · 매장 이름으로 찾기' : '이름 · 연락처로 찾기') + '" aria-label="' + cfg.title + ' 검색" value="' + esc(st.q) + '">' +
+      '<div class="tools"><input type="search" class="search" id="ls-q" placeholder="' + (t === 'contacts' ? '가수 · 매장 이름으로 찾기' : t === 'clips' ? '가수 이름 · 한마디로 찾기' : '이름 · 연락처로 찾기') + '" aria-label="' + cfg.title + ' 검색" value="' + esc(st.q) + '">' +
       '<div class="seg" role="group" aria-label="상태"><button type="button" data-st="">전체</button>' + cfg.statuses.map(function (s) { return '<button type="button" data-st="' + s + '">' + ((cfg.labels && cfg.labels[s]) || STATUS[s]) + '</button>'; }).join('') + '</div>' +
       (cfg.extra ? '<select id="ls-x" aria-label="보기" style="width:auto;min-width:130px">' + cfg.extra.map(function (x) { return '<option value="' + x[0] + '"' + (st.x === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>' : '') + '</div>' +
       '<div class="tbl" id="ls-tbl" style="--cols:' + cfg.cols + '"></div><div class="pager"><span id="ls-range"></span><span class="row"><button type="button" class="btn ghost sm" id="ls-prev">이전</button><button type="button" class="btn ghost sm" id="ls-next">다음</button></span></div>';
@@ -327,6 +334,7 @@
   VIEWS.fans = function () { listView('fans'); };
   VIEWS.bookings = function () { listView('bookings'); };
   VIEWS.contacts = function () { listView('contacts'); };
+  VIEWS.clips = function () { listView('clips'); };
   VIEWS.notify_log = function () { listView('notify_log'); };
 
   function openRecord(t, id) {
@@ -350,13 +358,16 @@
     Object.keys(d).forEach(function (k) { if (!(k in cfg.details) && d[k] != null && d[k] !== '') dl += '<dt>' + esc(k) + '</dt><dd>' + val2html(d[k]) + '</dd>'; });
     var isMember = t === 'venues' || t === 'artists' || t === 'fans';
     if (isMember) dl += '<dt>등록 방법</dt><dd>' + esc(SOURCE[r.source] || '시작 화면') + '</dd>';
-    dl += '<dt>' + (isMember ? '등록일' : '신청일') + '</dt><dd>' + fmt(r.created_at, true) + '</dd>' + (r.updated_at ? '<dt>마지막 수정</dt><dd>' + fmt(r.updated_at, true) + '</dd>' : '');
+    dl += '<dt>' + (isMember ? '등록일' : t === 'clips' ? '올린 날' : '신청일') + '</dt><dd>' + fmt(r.created_at, true) + '</dd>' + (r.updated_at ? '<dt>마지막 수정</dt><dd>' + fmt(r.updated_at, true) + '</dd>' : '');
     var phone = String(r.phone || '').replace(/[^0-9+]/g, '');
     var files = (r.photo_path || r.cert_path || (r.photo_paths && r.photo_paths.length)) ? '<section class="stack" id="dr-files"><h3 class="sec-t">첨부 파일</h3><p class="hint">불러오는 중…</p></section>' : '';
     var related = '';
     if (t === 'contacts') related = '<section class="stack"><h3 class="sec-t">주고받은 사람</h3><div class="row">' +
       (r.artist_id ? '<button type="button" class="btn ghost sm" data-goto="artists:' + esc(r.artist_id) + '">가수 정보 · ' + esc(r.artist_name || '') + '</button>' : '') +
       (r.venue_id ? '<button type="button" class="btn ghost sm" data-goto="venues:' + esc(r.venue_id) + '">매장 정보 · ' + esc(r.venue_name || '') + '</button>' : '') + '</div></section>';
+    if (t === 'clips') related = '<section class="stack" id="dr-clip"><h3 class="sec-t">영상</h3><p class="hint">불러오는 중…</p></section>' +
+      '<section class="stack"><h3 class="sec-t">올린 가수</h3><div class="row"><button type="button" class="btn ghost sm" data-goto="artists:' + esc(r.artist_id) + '">가수 정보 · ' + esc(r.artist_name || '') + '</button></div>' +
+      '<p class="hint">공개: 피드에 보여요 · 숨김: 피드에서 감춰요 (파일은 남아요) · 가수가 내림: 가수가 직접 내린 영상이에요</p></section>';
     if (t === 'bookings' && r.fan_id) related = '<section class="stack"><h3 class="sec-t">손님 회원</h3><div class="row"><button type="button" class="btn ghost sm" data-goto="fans:' + esc(r.fan_id) + '">손님 정보 보기</button></div></section>';
     if (isMember) related = '<section class="stack" id="dr-act"><h3 class="sec-t">' + (t === 'fans' ? '예약 기록' : '컨택 기록') + '</h3><p class="hint">불러오는 중…</p></section>' +
       (r.member_token && CFG.appUrl ? '<section class="stack"><h3 class="sec-t">앱 연결 링크</h3><p class="hint">본인에게만 보내 주세요. 이 링크를 열면 다른 기기에서도 ' + (t === 'venues' ? '매장의 컨택 요청을 받고 답할 수' : t === 'artists' ? '내 컨택을 주고받을 수' : '내 예약을 볼 수') + ' 있어요.</p>' +
@@ -366,12 +377,12 @@
       (r.user_id ? '<span class="pill" style="background:#FEE500;color:#191919">카카오 연동</span>' : '') + '<span class="grow"></span>' +
       (phone ? '<a class="btn ghost sm" href="tel:' + esc(phone) + '">전화</a><a class="btn ghost sm" href="sms:' + esc(phone) + '">문자</a>' : '') + '</div>' +
       '<dl class="dl">' + dl + '</dl>' + files + related + reply +
-      (cfg.readonly ? '' : '<section class="stack"><h3 class="sec-t">상태 바꾸기</h3><div class="row">' + cfg.statuses.map(function (s) {
+      (cfg.readonly ? '' : '<section class="stack"><h3 class="sec-t">상태 바꾸기</h3><div class="row">' + (cfg.setStatuses || cfg.statuses).map(function (s) {
         var cls = PILL[s] === 'approved' ? 'ok' : PILL[s] === 'rejected' ? 'danger' : 'ghost', lb = (cfg.labels && cfg.labels[s]) || STATUS[s];
         return '<button type="button" class="btn sm ' + cls + '" data-set="' + s + '"' + (r.status === s ? ' disabled' : '') + '>' + lb + (r.status === s ? ' (현재)' : '') + '</button>';
       }).join('') + '</div></section>' +
       '<section class="stack"><label class="fld"><span>관리자 메모 (운영팀만 보여요)</span><textarea id="dr-memo" maxlength="2000">' + esc(r.admin_memo || '') + '</textarea></label><div class="row end"><button type="button" class="btn sm" id="dr-memo-save">메모 저장</button></div></section>') +
-      '<section class="stack" style="border-top:1px solid var(--line);padding-top:16px"><div class="row"><span class="hint grow">삭제하면 되돌릴 수 없어요.' + (isMember ? ' 첨부 파일' + (t !== 'fans' ? ' · 컨택 기록' : '') + '도 함께 지워져요.' : '') + '</span><button type="button" class="btn danger sm" id="dr-del">삭제</button></div></section>';
+      '<section class="stack" style="border-top:1px solid var(--line);padding-top:16px"><div class="row"><span class="hint grow">삭제하면 되돌릴 수 없어요.' + (isMember ? ' 첨부 파일' + (t !== 'fans' ? ' · 컨택 기록' : '') + (t === 'artists' ? ' · 피드 영상' : '') + '도 함께 지워져요.' : t === 'clips' ? ' 영상 파일도 함께 지워져요.' : '') + '</span><button type="button" class="btn danger sm" id="dr-del">삭제</button></div></section>';
     openDrawer(cfg.nameOf(r) || '(이름 없음)', html);
     var body = $('#dr-body');
     function patch(ch, msg) {
@@ -413,12 +424,23 @@
     $('#dr-del', body).addEventListener('click', function () {
       confirmBox(cfg.one + ' 정보를 삭제할까요?', '“' + (cfg.nameOf(r) || '') + '” 정보와 첨부 파일이 모두 지워지고 되돌릴 수 없어요.', '삭제').then(function (yes) {
         if (!yes) return;
-        var paths = [].concat(r.photo_path || [], r.cert_path || [], r.photo_paths || []);   // 컨택 기록은 데이터베이스가 함께 지움
-        (paths.length ? api('/storage/v1/object/uploads', { method: 'DELETE', body: { prefixes: paths } }).catch(function () { /* 파일이 없어도 계속 */ }) : Promise.resolve())
+        var paths = t === 'clips' ? [] : [].concat(r.photo_path || [], r.cert_path || [], r.photo_paths || []);   // 컨택 기록 · 영상 기록은 데이터베이스가 함께 지움
+        function dropClips(list) { list = list.filter(Boolean); return list.length ? api('/storage/v1/object/clips', { method: 'DELETE', body: { prefixes: list } }).catch(function () { /* 파일이 없어도 계속 */ }) : Promise.resolve(); }
+        var clipFiles = t === 'clips' ? dropClips([r.video_path, r.poster_path])
+          : t === 'artists' ? api('/rest/v1/clips?select=video_path,poster_path&artist_id=eq.' + encodeURIComponent(r.id)).then(function (cs) { var l = []; (cs || []).forEach(function (c) { l.push(c.video_path, c.poster_path); }); return dropClips(l); }, function () { /* 계속 */ })
+          : Promise.resolve();
+        clipFiles.then(function () { return paths.length ? api('/storage/v1/object/uploads', { method: 'DELETE', body: { prefixes: paths } }).catch(function () { /* 파일이 없어도 계속 */ }) : null; })
           .then(function () { return api('/rest/v1/' + t + '?id=eq.' + encodeURIComponent(r.id), { method: 'DELETE', headers: { Prefer: 'return=representation' } }); })
           .then(function (rows) { if (!rows || !rows.length) throw Object.assign(new Error('no row'), { status: 403 }); toast('삭제했어요'); closeDrawer(); if (reload) reload(); })
           .catch(fail);
       });
+    });
+    // 피드 영상: 1시간짜리 임시 주소로 바로 재생
+    var cbox = $('#dr-clip', body);
+    if (cbox) Promise.all([signedUrl(r.video_path, 'clips').catch(function () { return ''; }), r.poster_path ? signedUrl(r.poster_path, 'clips').catch(function () { return ''; }) : '']).then(function (u) {
+      if (!cbox.isConnected) return;
+      cbox.innerHTML = '<h3 class="sec-t">영상</h3>' + (u[0] ? '<video class="clip-prev" src="' + esc(u[0]) + '"' + (u[1] ? ' poster="' + esc(u[1]) + '"' : '') + ' controls playsinline preload="metadata"></video><p class="hint">주소는 1시간 동안만 열려요</p>'
+        : '<p class="hint">영상 파일을 불러오지 못했어요 (이미 지워졌을 수 있어요)</p>');
     });
     // 첨부 파일: 1시간짜리 임시 주소로 보여 준다 (비공개 저장소)
     var fbox = $('#dr-files', body);
