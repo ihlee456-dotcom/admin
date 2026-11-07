@@ -90,13 +90,20 @@
   /* ---------- 표 설정 ---------- */
   var STATUS = { pending: '대기', approved: '승인', rejected: '반려', active: '정상', blocked: '차단',
                  requested: '대기', confirmed: '확정', visited: '방문', noshow: '노쇼', declined: '거절', cancelled: '취소', accepted: '수락',
-                 sent: '보냄', failed: '실패', skipped: '건너뜀', sending: '보내는 중', visible: '공개', hidden: '숨김', deleted: '가수가 내림' };
+                 sent: '보냄', failed: '실패', skipped: '건너뜀', sending: '보내는 중', visible: '공개', hidden: '숨김', deleted: '가수가 내림',
+                 scheduled: '예정', open: '모집 중', filled: '선정 완료', closed: '마감', applied: '지원', picked: '선정', withdrawn: '지원 취소' };
   var PILL = { pending: 'pending', requested: 'pending', approved: 'approved', active: 'approved', confirmed: 'approved', accepted: 'approved', visited: 'approved',
                rejected: 'rejected', blocked: 'rejected', declined: 'rejected', noshow: 'rejected', cancelled: 'off',
-               sent: 'approved', failed: 'rejected', skipped: 'off', sending: 'pending', visible: 'approved', hidden: 'off', deleted: 'rejected' };
+               sent: 'approved', failed: 'rejected', skipped: 'off', sending: 'pending', visible: 'approved', hidden: 'off', deleted: 'rejected',
+               scheduled: 'approved', open: 'pending', filled: 'approved', closed: 'off', applied: 'pending', picked: 'approved', withdrawn: 'off' };
   var NOTE = { contact_new: '새 컨택 요청 (받는 사람에게)', contact_result: '컨택 수락 · 거절 (보낸 사람에게)', booking_admin: '새 예약 (운영자에게)',
-               booking_guest: '예약 접수 (손님에게)', booking_result: '예약 확정 · 불가 · 취소 (손님에게)' };
+               booking_guest: '예약 접수 (손님에게)', booking_result: '예약 확정 · 불가 · 취소 (손님에게)',
+               booking_venue: '새 예약 (그 매장 사장님에게)', booking_remind: '공연 당일 리마인드 (예약 손님에게 · 매일 14시)',
+               gig_apply: '공고 지원 (사장님에게)', gig_pick: '공고 선정 (가수에게)', gig_remind: '내일 공연 리마인드 (가수에게 · 매일 18시)',
+               tip_confirmed: '팁 입금 확인 (가수에게)' };
+  var PAYS = { unpaid: '미지급', paid: '지급 완료', none: '해당 없음' };
   var KIND = { watch: '공연 관람', rent: '대관 견적' };
+  var CSRC = { upload: '영상 파일', youtube: '유튜브 링크', instagram: '인스타그램 링크' };
   var DIR = { artist_to_venue: '가수 → 라이브바', venue_to_artist: '라이브바 → 가수' };
   var SOURCE = { quick: '간단 등록', detail: '상세 등록' };
   var TARGET = { all: '모두', fan: '손님', venue: '사장님', artist: '가수' };
@@ -119,7 +126,7 @@
       head: ['활동명', '편성', '장르', '연락처', '등록', '등록일', '상태'],
       cells: function (r) { return [r.name, r.lineup, list(r.genres), r.phone, SOURCE[r.source], fmt(r.created_at)]; },
       fields: [['활동명 · 팀명', 'name'], ['연락처', 'phone'], ['편성', 'lineup'], ['장르', 'genres', list], ['대표 링크', 'link', 'url'], ['카카오 이메일', 'email']],
-      details: { age: '나이', region: '활동 지역', bio: '소개 · 이력', careers: '공연 경력', audio_link: '음원 링크', video_link: '공연 영상 링크', audio_file: '음원 파일 (이름만)', video_file: '영상 파일 (이름만)' }
+      details: { instagram: '인스타그램', youtube: '유튜브 채널', age: '나이', region: '활동 지역', bio: '소개 · 이력', careers: '공연 경력', audio_link: '음원 링크', video_link: '공연 영상 링크', audio_file: '음원 파일 (이름만)', video_file: '영상 파일 (이름만)' }
     },
     bookings: {
       title: '예약', one: '예약', nameOf: function (r) { return (r.kind === 'rent' ? '대관 견적 · ' : '') + r.name; }, search: ['name', 'phone', 'artist'],
@@ -143,8 +150,33 @@
       title: '피드 영상', one: '영상', nameOf: function (r) { return (r.artist_name || '가수') + ' 클립'; }, search: ['artist_name', 'caption'],
       statuses: ['visible', 'hidden', 'deleted'], setStatuses: ['visible', 'hidden'], cols: '1.1fr 0.5fr 2fr 90px 86px',
       head: ['가수', '길이', '한마디', '올린 날', '상태'],
-      cells: function (r) { return [r.artist_name, Math.round(+r.duration || 0) + '초', r.caption, fmt(r.created_at)]; },
-      fields: [['가수', 'artist_name'], ['길이', 'duration', function (v) { return (Math.round(+v * 10) / 10) + '초'; }], ['한마디', 'caption']], details: {}
+      cells: function (r) { return [r.artist_name, CSRC[r.source] && r.source !== 'upload' ? CSRC[r.source] : Math.round(+r.duration || 0) + '초', r.caption, fmt(r.created_at)]; },
+      fields: [['가수', 'artist_name'], ['종류', 'source', function (v) { return CSRC[v] || v; }], ['길이', 'duration', function (v) { return (Math.round(+v * 10) / 10) + '초'; }], ['한마디', 'caption']], details: {}
+    },
+    shows: {
+      title: '공연 일정', one: '공연', nameOf: function (r) { return ((r.venue || {}).venue_name || '매장') + ' · ' + day(r.show_date) + ' ' + (r.show_time || ''); }, search: ['artist_name', 'part'],
+      statuses: ['scheduled', 'cancelled'], cols: '1fr 1fr 1.1fr 0.9fr 0.8fr 70px', head: ['날짜', '매장', '가수', '공연비', '지급', '상태'],
+      select: '*,venue:venues(venue_name)', order: 'show_date.asc,show_time.asc',
+      cells: function (r) { return [(day(r.show_date) + ' ' + (r.show_time || '') + (r.part ? ' ' + r.part : '')).trim(), (r.venue || {}).venue_name, r.kind === 'rental' ? '대관' : (r.artist_name || '미정'), r.pay, PAYS[r.pay_status]]; },
+      fields: [['매장', 'venue', function (v) { return v && v.venue_name; }], ['날짜', 'show_date', day], ['시간', 'show_time'], ['부', 'part'], ['가수', 'artist_name'], ['구분', 'kind', function (v) { return v === 'rental' ? '대관' : '공연'; }],
+               ['공연비', 'pay'], ['공연비 지급', 'pay_status', function (v) { return PAYS[v] || v; }], ['공고에서 선정', 'gig_id', function (v) { return v ? '예' : '아니요'; }]],
+      details: {}, extra: [['upcoming', '오늘 이후'], ['', '모든 날짜'], ['past', '지난 공연'], ['unpaid', '공연비 미지급']]
+    },
+    gigs: {
+      title: '빈 무대 공고', one: '공고', nameOf: function (r) { return (r.venue_name || '매장') + ' · ' + day(r.gig_date) + ' ' + (r.gig_time || ''); }, search: ['venue_name', 'note', 'pay'],
+      statuses: ['open', 'filled', 'closed', 'cancelled'], cols: '1fr 1fr 0.9fr 1fr 1.2fr 80px', head: ['날짜', '매장', '공연비', '편성 · 장르', '내용', '상태'], order: 'gig_date.asc',
+      cells: function (r) { return [(day(r.gig_date) + ' ' + (r.gig_time || '')).trim(), r.venue_name, r.pay, [r.lineup].concat(r.genres || []).filter(Boolean).join(' · '), r.note]; },
+      fields: [['매장', 'venue_name'], ['날짜', 'gig_date', day], ['시간', 'gig_time'], ['공연비', 'pay'], ['편성', 'lineup'], ['장르', 'genres', list], ['내용', 'note']],
+      details: {}, extra: [['upcoming', '오늘 이후'], ['', '모든 날짜'], ['past', '지난 공고']]
+    },
+    tips: {
+      title: '현장 팁', one: '팁', nameOf: function (r) { return r.payer + ' → ' + r.artist_name + ' · ' + won(r.amount) + '원'; }, search: ['payer', 'artist_name', 'song', 'message'],
+      statuses: ['pending', 'confirmed', 'rejected'], labels: { pending: '입금 확인 전', confirmed: '입금 확인', rejected: '입금 없음' },
+      cols: '0.9fr 0.8fr 1fr 0.8fr 1.3fr 90px 100px', head: ['입금자명', '금액', '받을 뮤지션', '팁 번호', '신청곡 · 한마디', '보낸 시각', '상태'],
+      cells: function (r) { return [r.payer, won(r.amount) + '원', r.artist_name + (r.artist_id ? '' : ' (이름만)'), String(r.ref || '').replace(/-/g, '').slice(0, 6).toUpperCase(), [r.song ? '♪ ' + r.song : '', r.message].filter(Boolean).join(' · '), fmt(r.created_at)]; },
+      fields: [['입금자명', 'payer'], ['금액', 'amount', function (v) { return won(v) + '원'; }], ['받을 뮤지션', 'artist_name'], ['팁 번호', 'ref', function (v) { return String(v).replace(/-/g, '').slice(0, 6).toUpperCase(); }],
+               ['신청곡', 'song'], ['한마디', 'message'], ['매장', 'venue_name'], ['입금 확인 시각', 'confirmed_at', function (v) { return fmt(v, true); }]],
+      details: {}
     },
     notify_log: {
       title: '알림 기록', one: '알림 기록', nameOf: function (r) { return NOTE[r.event] || r.event; }, search: ['to_phone', 'event', 'detail'], readonly: true,
@@ -238,6 +270,7 @@
       api('/rest/v1/artists?select=id,created_at,name,lineup,status,source&order=created_at.desc&limit=6'),
       api('/rest/v1/fans?select=id,created_at,name,area,status&order=created_at.desc&limit=6'),
       count('bookings', 'status=eq.requested'), count('bookings', 'show_date=eq.' + kstDate() + '&status=in.(requested,confirmed)'), count('contacts', 'status=eq.requested'), count('contacts'),
+      count('tips', 'status=eq.pending'), count('gigs', 'status=eq.open&gig_date=gte.' + kstDate()), count('shows', 'status=eq.scheduled&show_date=eq.' + kstDate()), count('shows', 'status=eq.scheduled&kind=eq.show&pay_status=eq.unpaid&show_date=lt.' + kstDate()),
       api('/rest/v1/bookings?select=id,created_at,name,kind,show_date,show_time,artist,people,status&order=created_at.desc&limit=5'),
       api('/rest/v1/contacts?select=id,created_at,direction,artist_name,venue_name,status&order=created_at.desc&limit=5')
     ]).then(function (r) {
@@ -255,9 +288,12 @@
         stat('#fans', '손님', r[4], r[5] ? '오늘 +' + won(r[5]) : '오늘 신규 없음', !r[5]) +
         stat('#bookings', '예약 신청 대기', r[12], '오늘 공연 예약 ' + won(r[13]) + '건', !r[13]) +
         stat('#contacts', '컨택 답 대기', r[14], '전체 컨택 ' + won(r[15]) + '건', !r[15]) +
-        stat('#popups', '켜진 팝업', on, '전체 ' + won(pops.length) + '개', !on) + '</div>' +
-        '<div class="grid2" style="margin-bottom:16px"><div class="card"><h2>새 예약</h2>' + miniList('bookings', r[16] || [], function (x) { return [x.name + ' · ' + x.people + '명', (x.kind === 'rent' ? '대관 견적' : day(x.show_date) + ' ' + (x.show_time || '') + ' ' + (x.artist || ''))]; }) + '</div>' +
-        '<div class="card"><h2>새 컨택</h2>' + miniList('contacts', r[17] || [], function (x) { return [x.artist_name + ' ↔ ' + x.venue_name, DIR[x.direction]]; }) + '</div></div>' +
+        stat('#popups', '켜진 팝업', on, '전체 ' + won(pops.length) + '개', !on) +
+        stat('#tips', '팁 입금 확인 대기', r[16], r[16] ? '입금 내역과 맞춰 보세요' : '대기 없음', !r[16]) +
+        stat('#gigs', '모집 중인 공고', r[17], '오늘 공연 ' + won(r[18]) + '건', !r[18]) +
+        stat('#shows', '공연비 미지급', r[19], r[19] ? '지난 공연 기준' : '모두 지급', !r[19]) + '</div>' +
+        '<div class="grid2" style="margin-bottom:16px"><div class="card"><h2>새 예약</h2>' + miniList('bookings', r[20] || [], function (x) { return [x.name + ' · ' + x.people + '명', (x.kind === 'rent' ? '대관 견적' : day(x.show_date) + ' ' + (x.show_time || '') + ' ' + (x.artist || ''))]; }) + '</div>' +
+        '<div class="card"><h2>새 컨택</h2>' + miniList('contacts', r[21] || [], function (x) { return [x.artist_name + ' ↔ ' + x.venue_name, DIR[x.direction]]; }) + '</div></div>' +
         '<div class="card"><h2>최근 등록</h2><div class="tbl" style="--cols:70px 1.4fr 1fr 100px 70px;border:0">' +
         (recent.length ? '<div class="tr th"><span class="td">구분</span><span class="td">이름</span><span class="td">정보</span><span class="td">등록일</span><span class="td">상태</span></div>' +
           recent.map(function (x) {
@@ -280,9 +316,9 @@
   var PAGE = 30, LS = {};
   function cleanQ(q) { return String(q || '').replace(/[,()*:"\\%]/g, ' ').trim().slice(0, 40); }
   function listView(t) {
-    var cfg = T[t], st = LS[t] || (LS[t] = { status: '', q: '', page: 0, x: t === 'bookings' ? 'upcoming' : '' });
+    var cfg = T[t], st = LS[t] || (LS[t] = { status: '', q: '', page: 0, x: (t === 'bookings' || t === 'shows' || t === 'gigs') ? 'upcoming' : '' });
     view.innerHTML = '<div class="vh"><div><h1>' + cfg.title + '</h1><p id="ls-sum">불러오는 중…</p></div><span class="grow"></span><button type="button" class="btn ghost sm" id="ls-csv">엑셀(CSV) 내려받기</button></div>' +
-      '<div class="tools"><input type="search" class="search" id="ls-q" placeholder="' + (t === 'contacts' ? '가수 · 매장 이름으로 찾기' : t === 'clips' ? '가수 이름 · 한마디로 찾기' : '이름 · 연락처로 찾기') + '" aria-label="' + cfg.title + ' 검색" value="' + esc(st.q) + '">' +
+      '<div class="tools"><input type="search" class="search" id="ls-q" placeholder="' + (t === 'contacts' ? '가수 · 매장 이름으로 찾기' : t === 'clips' ? '가수 이름 · 한마디로 찾기' : t === 'shows' ? '가수 이름으로 찾기' : t === 'gigs' ? '매장 · 내용으로 찾기' : t === 'tips' ? '입금자명 · 뮤지션 · 신청곡으로 찾기' : '이름 · 연락처로 찾기') + '" aria-label="' + cfg.title + ' 검색" value="' + esc(st.q) + '">' +
       '<div class="seg" role="group" aria-label="상태"><button type="button" data-st="">전체</button>' + cfg.statuses.map(function (s) { return '<button type="button" data-st="' + s + '">' + ((cfg.labels && cfg.labels[s]) || STATUS[s]) + '</button>'; }).join('') + '</div>' +
       (cfg.extra ? '<select id="ls-x" aria-label="보기" style="width:auto;min-width:130px">' + cfg.extra.map(function (x) { return '<option value="' + x[0] + '"' + (st.x === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>' : '') + '</div>' +
       '<div class="tbl" id="ls-tbl" style="--cols:' + cfg.cols + '"></div><div class="pager"><span id="ls-range"></span><span class="row"><button type="button" class="btn ghost sm" id="ls-prev">이전</button><button type="button" class="btn ghost sm" id="ls-next">다음</button></span></div>';
@@ -294,6 +330,8 @@
         var today = kstDate();
         if (t === 'bookings') f.push(st.x === 'today' ? 'show_date=eq.' + today : st.x === 'upcoming' ? 'show_date=gte.' + today : 'show_date=lt.' + today);
         else if (t === 'contacts') f.push('direction=eq.' + st.x);
+        else if (t === 'shows') f.push(st.x === 'upcoming' ? 'show_date=gte.' + today : st.x === 'past' ? 'show_date=lt.' + today : 'pay_status=eq.unpaid&kind=eq.show&status=eq.scheduled');
+        else if (t === 'gigs') f.push(st.x === 'upcoming' ? 'gig_date=gte.' + today : 'gig_date=lt.' + today);
       }
       var q = cleanQ(st.q);
       if (q) f.push('or=' + encodeURIComponent('(' + cfg.search.map(function (c) { return c + '.ilike.*' + q + '*'; }).join(',') + ')'));
@@ -303,7 +341,7 @@
       var tbl = $('#ls-tbl'); if (!tbl) return;
       tbl.innerHTML = '<p class="loading">불러오는 중…</p>';
       var f = filters();
-      api('/rest/v1/' + t + '?select=*' + (f ? '&' + f : '') + '&order=created_at.desc&limit=' + PAGE + '&offset=' + st.page * PAGE, { raw: true, headers: { Prefer: 'count=exact' } }).then(function (x) {
+      api('/rest/v1/' + t + '?select=' + (cfg.select || '*') + (f ? '&' + f : '') + '&order=' + (cfg.order || 'created_at.desc') + '&limit=' + PAGE + '&offset=' + st.page * PAGE, { raw: true, headers: { Prefer: 'count=exact' } }).then(function (x) {
         var rows = x.data || [], total = countOf(x.res);
         $('#ls-sum').textContent = '전체 ' + won(total) + '건' + (st.status ? ' · ' + ((cfg.labels && cfg.labels[st.status]) || STATUS[st.status]) : '') + (cleanQ(st.q) ? ' · “' + cleanQ(st.q) + '” 검색' : '');
         $('#ls-range').textContent = total ? (st.page * PAGE + 1) + '–' + (st.page * PAGE + rows.length) + ' / ' + won(total) : '';
@@ -335,10 +373,13 @@
   VIEWS.bookings = function () { listView('bookings'); };
   VIEWS.contacts = function () { listView('contacts'); };
   VIEWS.clips = function () { listView('clips'); };
+  VIEWS.shows = function () { listView('shows'); };
+  VIEWS.gigs = function () { listView('gigs'); };
+  VIEWS.tips = function () { listView('tips'); };
   VIEWS.notify_log = function () { listView('notify_log'); };
 
   function openRecord(t, id) {
-    api('/rest/v1/' + t + '?select=*&id=eq.' + encodeURIComponent(id)).then(function (rows) {
+    api('/rest/v1/' + t + '?select=' + ((T[t] && T[t].select) || '*') + '&id=eq.' + encodeURIComponent(id)).then(function (rows) {
       if (rows && rows[0]) showRecord(t, rows[0], function () { var h = (location.hash || '#dashboard').slice(1); if (VIEWS[h]) VIEWS[h](); });
     }).catch(fail);
   }
@@ -368,6 +409,12 @@
     if (t === 'clips') related = '<section class="stack" id="dr-clip"><h3 class="sec-t">영상</h3><p class="hint">불러오는 중…</p></section>' +
       '<section class="stack"><h3 class="sec-t">올린 가수</h3><div class="row"><button type="button" class="btn ghost sm" data-goto="artists:' + esc(r.artist_id) + '">가수 정보 · ' + esc(r.artist_name || '') + '</button></div>' +
       '<p class="hint">공개: 피드에 보여요 · 숨김: 피드에서 감춰요 (파일은 남아요) · 가수가 내림: 가수가 직접 내린 영상이에요</p></section>';
+    if (t === 'shows') related = '<section class="stack"><h3 class="sec-t">공연비 지급</h3><div class="row">' + ['unpaid', 'paid', 'none'].map(function (k) {
+        return '<button type="button" class="btn sm ' + (k === 'paid' ? 'ok' : 'ghost') + '" data-pay="' + k + '"' + (r.pay_status === k ? ' disabled' : '') + '>' + PAYS[k] + (r.pay_status === k ? ' (현재)' : '') + '</button>'; }).join('') + '</div>' +
+      (r.artist_id ? '<div class="row"><button type="button" class="btn ghost sm" data-goto="artists:' + esc(r.artist_id) + '">가수 정보 보기</button></div>' : '') + '</section>';
+    if (t === 'gigs') related = '<section class="stack" id="dr-apps"><h3 class="sec-t">지원한 가수</h3><p class="hint">불러오는 중…</p></section>';
+    if (t === 'tips') related = '<section class="stack"><p class="hint">입금 문자에 적힌 입금자명 · 금액 · 팁 번호를 통장 내역과 맞춰 본 뒤 ‘입금 확인’을 눌러 주세요. 확인하면 가수 앱의 ‘받은 팁’에 금액이 보이고, 알림톡을 켰다면 가수에게도 알려요.</p>' +
+      (r.artist_id ? '<div class="row"><button type="button" class="btn ghost sm" data-goto="artists:' + esc(r.artist_id) + '">가수 정보 보기</button></div>' : '') + '</section>';
     if (t === 'bookings' && r.fan_id) related = '<section class="stack"><h3 class="sec-t">손님 회원</h3><div class="row"><button type="button" class="btn ghost sm" data-goto="fans:' + esc(r.fan_id) + '">손님 정보 보기</button></div></section>';
     if (isMember) related = '<section class="stack" id="dr-act"><h3 class="sec-t">' + (t === 'fans' ? '예약 기록' : '컨택 기록') + '</h3><p class="hint">불러오는 중…</p></section>' +
       (r.member_token && CFG.appUrl ? '<section class="stack"><h3 class="sec-t">앱 연결 링크</h3><p class="hint">본인에게만 보내 주세요. 이 링크를 열면 다른 기기에서도 ' + (t === 'venues' ? '매장의 컨택 요청을 받고 답할 수' : t === 'artists' ? '내 컨택을 주고받을 수' : '내 예약을 볼 수') + ' 있어요.</p>' +
@@ -392,6 +439,15 @@
       }).catch(fail);
     }
     $$('[data-set]', body).forEach(function (b) { b.addEventListener('click', function () { var s = b.getAttribute('data-set'); patch({ status: s }, ((cfg.labels && cfg.labels[s]) || STATUS[s]) + ' 상태로 바꿨어요'); }); });
+    $$('[data-pay]', body).forEach(function (b) { b.addEventListener('click', function () { var k = b.getAttribute('data-pay'); patch({ pay_status: k }, '공연비 ' + PAYS[k] + '로 바꿨어요'); }); });
+    var appsBox = $('#dr-apps', body);
+    if (appsBox) api('/rest/v1/gig_apps?select=id,artist_id,artist_name,message,status,created_at&gig_id=eq.' + encodeURIComponent(r.id) + '&order=created_at.asc').then(function (rows) {
+      if (!appsBox.isConnected) return; rows = rows || [];
+      appsBox.innerHTML = '<h3 class="sec-t">지원한 가수 · ' + rows.length + '명</h3>' + (!rows.length ? '<p class="hint">아직 지원한 가수가 없어요</p>' : '<div class="tbl" style="--cols:minmax(0,1fr) auto">' + rows.map(function (x) {
+        return '<button type="button" class="tr" data-goto="artists:' + esc(x.artist_id) + '"><span class="td main" style="font-weight:600;font-size:13px">' + esc(x.artist_name || '가수') + (x.message ? '<br><span style="font-weight:400;color:var(--muted)">' + esc(x.message) + '</span>' : '') + '</span><span class="td st">' + pill(x.status) + '</span></button>';
+      }).join('') + '</div>');
+      $$('[data-goto]', appsBox).forEach(function (b) { b.addEventListener('click', function () { var p = b.getAttribute('data-goto').split(':'); openRecord(p[0], p[1]); }); });
+    }).catch(function () { if (appsBox.isConnected) appsBox.innerHTML = '<p class="hint">불러오지 못했어요</p>'; });
     $$('[data-goto]', body).forEach(function (b) { b.addEventListener('click', function () { var p = b.getAttribute('data-goto').split(':'); openRecord(p[0], p[1]); }); });
     var rs = $('#dr-reply-save', body); if (rs) rs.addEventListener('click', function () { patch({ reply: $('#dr-reply', body).value.trim() || null }, '답변을 저장했어요 · 손님 앱에 보여요'); });
     if (isMember && r.member_token && CFG.appUrl) {
@@ -436,7 +492,13 @@
       });
     });
     // 피드 영상: 1시간짜리 임시 주소로 바로 재생
-    var cbox = $('#dr-clip', body);
+    var cbox = $('#dr-clip', body), ext = r.source === 'youtube' ? ['https://www.youtube-nocookie.com/embed/' + r.ext_id, 'https://www.youtube.com/watch?v=' + r.ext_id, '16/9']
+      : r.source === 'instagram' ? ['https://www.instagram.com/' + String(r.ext_id).replace(':', '/') + '/embed/', 'https://www.instagram.com/' + String(r.ext_id).replace(':', '/') + '/', '4/5'] : null;
+    if (cbox && ext && /^[A-Za-z0-9:_-]{5,45}$/.test(r.ext_id || '')) {
+      cbox.innerHTML = '<h3 class="sec-t">영상 (' + esc(CSRC[r.source]) + ')</h3><iframe class="clip-prev" src="' + esc(ext[0]) + '" style="aspect-ratio:' + ext[2] + ';border:0" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="영상 미리보기"></iframe>' +
+        '<a class="file-link" href="' + esc(ext[1]) + '" target="_blank" rel="noopener noreferrer">' + (r.source === 'youtube' ? '유튜브' : '인스타그램') + '에서 보기</a>';
+      cbox = null;
+    }
     if (cbox) Promise.all([signedUrl(r.video_path, 'clips').catch(function () { return ''; }), r.poster_path ? signedUrl(r.poster_path, 'clips').catch(function () { return ''; }) : '']).then(function (u) {
       if (!cbox.isConnected) return;
       cbox.innerHTML = '<h3 class="sec-t">영상</h3>' + (u[0] ? '<video class="clip-prev" src="' + esc(u[0]) + '"' + (u[1] ? ' poster="' + esc(u[1]) + '"' : '') + ' controls playsinline preload="metadata"></video><p class="hint">주소는 1시간 동안만 열려요</p>'
@@ -635,7 +697,13 @@
     contact_result: { name: '컨택싱어_컨택결과', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 컨택 결과 안내\n\n#{받는사람}님이 보낸 컨택에 #{상대}님이 답했어요.\n\n■ 결과: #{결과}\n■ 한마디: #{답장}\n\n수락된 컨택은 컨택싱어 앱에서 상대의 연락처를 확인할 수 있어요.' },
     booking_admin: { name: '컨택싱어_새예약', btn: ['관리자 페이지 열기', 'admin'], text: '[컨택싱어] 새 예약 신청 안내\n\n새 예약 신청이 들어왔어요.\n\n■ 예약자: #{예약자}\n■ 일정: #{일정}\n■ 인원: #{인원}\n■ 구분: #{구분}\n■ 요청사항: #{요청사항}\n\n관리자 페이지에서 확인하고 확정해 주세요.' },
     booking_guest: { name: '컨택싱어_예약접수', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 예약 신청 접수 안내\n\n#{예약자}님, #{매장} 예약 신청이 접수됐어요.\n\n■ 일정: #{일정}\n■ 인원: #{인원}\n\n매장에서 확인하면 확정 여부를 다시 알려드릴게요.' },
-    booking_result: { name: '컨택싱어_예약결과', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 예약 결과 안내\n\n#{예약자}님, #{매장} 예약 결과를 알려드려요.\n\n■ 결과: 예약 #{결과}\n■ 일정: #{일정}\n■ 인원: #{인원}\n■ 매장 답변: #{답변}' }
+    booking_result: { name: '컨택싱어_예약결과', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 예약 결과 안내\n\n#{예약자}님, #{매장} 예약 결과를 알려드려요.\n\n■ 결과: 예약 #{결과}\n■ 일정: #{일정}\n■ 인원: #{인원}\n■ 매장 답변: #{답변}' },
+    booking_venue: { name: '컨택싱어_매장새예약', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 새 예약 신청 안내\n\n#{받는사람}님, 매장에 새 예약 신청이 들어왔어요.\n\n■ 예약자: #{예약자}\n■ 일정: #{일정}\n■ 인원: #{인원}\n■ 요청사항: #{요청사항}\n\n컨택싱어 앱 파트너 센터에서 확인하고 확정해 주세요.' },
+    booking_remind: { name: '컨택싱어_공연당일안내', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 공연 당일 안내\n\n#{예약자}님, 오늘 예약하신 공연이 있어요.\n\n■ 매장: #{매장}\n■ 일정: #{일정}\n■ 인원: #{인원}\n\n일정이 바뀌었다면 컨택싱어 앱에서 알려 주세요.' },
+    gig_apply: { name: '컨택싱어_공고지원', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 공고 지원 안내\n\n#{받는사람}님, 올리신 빈 무대 공고에 #{가수}님이 지원했어요.\n\n■ 공연 일정: #{일정}\n■ 한마디: #{한마디}\n\n컨택싱어 앱 파트너 센터에서 지원한 가수를 확인해 주세요.' },
+    gig_pick: { name: '컨택싱어_공고선정', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 공연 선정 안내\n\n#{가수}님, #{매장} 공연에 선정됐어요.\n\n■ 공연 일정: #{일정}\n■ 조건: #{조건}\n\n컨택싱어 앱에서 매장 연락처와 공연 일정을 확인해 주세요.' },
+    gig_remind: { name: '컨택싱어_내일공연안내', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 내일 공연 안내\n\n#{가수}님, 내일 공연 일정이 있어요.\n\n■ 매장: #{매장}\n■ 일정: #{일정}\n■ 조건: #{조건}\n\n일정이 바뀌었다면 매장에 미리 알려 주세요.' },
+    tip_confirmed: { name: '컨택싱어_팁입금확인', btn: ['앱에서 확인하기', 'app'], text: '[컨택싱어] 현장 팁 입금 확인 안내\n\n#{가수}님, 받은 현장 팁의 입금이 확인됐어요.\n\n■ 금액: #{금액}\n■ 보낸 분: #{보낸사람}\n■ 한마디: #{한마디}\n■ 신청곡: #{신청곡}\n\n컨택싱어 앱의 받은 팁에서 확인할 수 있어요.' }
   };
   function kakaoCards(s) {
     var au = (s.auth || {}).value || {}, nt = (s.notify || {}).value || {}, sc = au.kakao_scopes || [], tp = nt.templates || {}, ev = nt.events || {};
@@ -647,7 +715,7 @@
       '<label class="check"><input type="checkbox" data-sc="phone_number"' + (sc.indexOf('phone_number') >= 0 ? ' checked' : '') + '>전화번호 (phone_number)</label>' +
       '<p class="hint">승인 전에 켜면 카카오 로그인이 ‘KOE205’ 오류로 멈춰요. 닉네임 · 프로필 사진 · 이메일은 기본으로 받아요.</p></div>' +
       '<div class="row">' + (s.auth && s.auth.updated_at ? '<small class="hint">마지막 저장 ' + fmt(s.auth.updated_at, true) + '</small>' : '') + '<span class="grow"></span><button type="submit" class="btn sm">카카오 로그인 저장</button></div></form>' +
-      '<form class="card stack" id="st-notify"><h2>카카오 알림톡</h2><p class="hint" style="margin-top:-6px">새 컨택 · 컨택 결과 · 새 예약 · 예약 결과를 카카오톡으로 알려요. 솔라피에서 템플릿 승인을 받은 뒤 템플릿 ID를 넣고 켜 주세요.</p>' +
+      '<form class="card stack" id="st-notify"><h2>카카오 알림톡</h2><p class="hint" style="margin-top:-6px">컨택 · 예약 · 빈 무대 공고 · 현장 팁 소식과 공연 리마인드를 카카오톡으로 알려요. 솔라피에서 템플릿 승인을 받은 뒤 템플릿 ID를 넣고 켜 주세요. 템플릿 ID가 비어 있는 알림은 보내지 않아요.</p>' +
       '<label class="switch"><input type="checkbox" id="nt2-on"' + (nt.on ? ' checked' : '') + '><span>알림톡 켜기</span></label>' +
       '<label class="fld"><span>운영자 받는 번호 (새 예약 알림)</span><input type="text" id="nt2-phone" maxlength="20" value="' + esc(nt.admin_phone || '') + '" placeholder="010-0000-0000"></label>' +
       Object.keys(TEMPLATES).map(function (k) {
